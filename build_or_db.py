@@ -7,12 +7,9 @@ def main():
 
   # get all forums
 
-  datasets = orl.get_datasets(dataset_file, debug=True)
+  datasets = orl.get_datasets(dataset_file, debug=False)
 
-  print(datasets)
-
-  # split forums into train/dev/test
-
+  
   # patch together long comments
 
   # chunk

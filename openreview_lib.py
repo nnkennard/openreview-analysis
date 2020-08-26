@@ -54,15 +54,74 @@ def get_nonorphans(parents):
 
   return new_parents 
 
+def superify(old_id):
+  return old_id + "_super"
+
+def desuperify(super_id):
+  assert super_id.endswith("_super")
+  return super_id[:-6]
+
+def flatten_signature(note):
+  k = "|".join(sorted(note.signatures))
+  print(k)
+  return k
+
+def restructure_forum(forum_structure, note_map):
+  supernode_structure = {}
+  nodes = set(
+      forum_structure.keys()).union(set(
+        forum_structure.values())) - set([None])
+
+  equiv_classes = {
+      note_id:[note_id] for note_id in nodes 
+    }
+
+  parent_finder = {
+      note_id:note_id for note_id in nodes
+      }
+
+
+  for child, parent in forum_structure.items():
+    if parent is None:
+      continue
+    child_note = note_map[child]
+    parent_note = note_map[parent]
+    if flatten_signature(child_note) == flatten_signature(parent_note):
+      for k, v in equiv_classes.items():
+        if parent in v:
+          print("k", equiv_classes[k])
+          print("child", equiv_classes[child])
+          equiv_classes[k]+= list(equiv_classes[child])
+          del equiv_classes[child]
+          print(len(equiv_classes[k]))
+          print("*")
+          print("2k", equiv_classes[k])
+          assert child not in equiv_classes
+          #print("2child", equiv_classes[child])
+          break
+
+  if max(len(x) for x in equiv_classes.values()) > 3:
+    print(forum_structure)
+    print(equiv_classes)
+    exit()
+
+
 
 class Dataset(object):
   def __init__(self, forum_ids, client, conference, set_split, debug):
     submissions = openreview.tools.iterget_notes(
           client, invitation=INVITATION_MAP[conference])
     self.forums = [n.forum for n in submissions if n.forum in forum_ids]
-    print(len(forum_ids), len(self.forums))
+    if debug:
+      self.forums = self.forums[:5]
     self.client = client
-    self.forum_map, self.node_map = self._get_forum_map()
+    self.forum_map, self.note_map = self._get_forum_map()
+    for forum_struct in self.forum_map.values():
+      restructure_forum(forum_struct, self.note_map)
+
+
+  def supernode_transform(self):
+    pass
 
 
   def _get_forum_map(self):
