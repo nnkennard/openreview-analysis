@@ -14,7 +14,7 @@ INVITATION_MAP = {
 }
 
 
-def get_datasets(dataset_file, debug=False):
+def get_datasets(dataset_file, corenlp_client, debug=False):
   with open(dataset_file, 'r') as f:
     examples = json.loads(f.read())
 
@@ -24,7 +24,7 @@ def get_datasets(dataset_file, debug=False):
 
   datasets = {}
   for set_split, forum_ids in examples["id_map"].items():
-    dataset = Dataset(forum_ids, guest_client, conference, set_split, debug)
+    dataset = Dataset(forum_ids, guest_client, corenlp_client, conference, set_split, debug)
     datasets[set_split] = dataset
 
   return datasets
@@ -54,34 +54,25 @@ def get_nonorphans(parents):
 
   return new_parents 
 
-def superify(old_id):
-  return old_id + "_super"
-
-def desuperify(super_id):
-  assert super_id.endswith("_super")
-  return super_id[:-6]
 
 def flatten_signature(note):
-  k = "|".join(sorted(note.signatures))
-  print(k)
-  return k
+  return  "|".join(sorted(note.signatures))
+
 
 def restructure_forum(forum_structure, note_map):
-  supernode_structure = {}
-  nodes = set(
+  notes = set(
       forum_structure.keys()).union(set(
         forum_structure.values())) - set([None])
 
   equiv_classes = {
-      note_id:[note_id] for note_id in nodes 
+      note_id:[note_id] for note_id in notes 
     }
 
-  parent_finder = {
-      note_id:note_id for note_id in nodes
-      }
+  ordered_children = sorted(forum_structure.keys(), key=lambda x:
+      note_map[x].tcdate)
 
-
-  for child, parent in forum_structure.items():
+  for child in ordered_children:
+    parent = forum_structure[child]
     if parent is None:
       continue
     child_note = note_map[child]
@@ -89,35 +80,63 @@ def restructure_forum(forum_structure, note_map):
     if flatten_signature(child_note) == flatten_signature(parent_note):
       for k, v in equiv_classes.items():
         if parent in v:
-          print("k", equiv_classes[k])
-          print("child", equiv_classes[child])
           equiv_classes[k]+= list(equiv_classes[child])
           del equiv_classes[child]
-          print(len(equiv_classes[k]))
-          print("*")
-          print("2k", equiv_classes[k])
-          assert child not in equiv_classes
-          #print("2child", equiv_classes[child])
           break
-
-  if max(len(x) for x in equiv_classes.values()) > 3:
-    print(forum_structure)
-    print(equiv_classes)
-    exit()
+   
+  return equiv_classes
 
 
+TOKEN_INDEX = 1  # Index of token field in conll output
 
+def get_tokens_from_tokenized(tokenized):
+  lines = tokenized.split("\n")
+  sentences = []
+  current_sentence = []
+  for line in lines:
+    if not line.strip():
+      if current_sentence:
+        sentences.append(current_sentence)
+      current_sentence = []
+    else:
+      current_sentence.append(line.split()[TOKEN_INDEX])
+  return sentences 
+
+
+def get_tokenized_chunks(client, text):
+  chunks = text.split("\n\n")
+  for chunk in chunks:
+    tokens = get_tokens_from_tokenized(client.annotate(chunk))
+    print(tokens)
+
+
+def get_type_and_text(note):
+  if note.replyto is None:
+    return "root", ""
+  else:
+    for text_type in ["review", "comment", "withdrawal confirmation",
+    "metareview"]:
+      if text_type in note.content:
+        return text_type, note.content[text_type]
+    assert False
+
+
+  
 class Dataset(object):
-  def __init__(self, forum_ids, client, conference, set_split, debug):
+  def __init__(self, forum_ids, or_client, corenlp_client, conference, set_split, debug):
     submissions = openreview.tools.iterget_notes(
-          client, invitation=INVITATION_MAP[conference])
+          or_client, invitation=INVITATION_MAP[conference])
     self.forums = [n.forum for n in submissions if n.forum in forum_ids]
     if debug:
-      self.forums = self.forums[:5]
-    self.client = client
+      self.forums = self.forums[:50]
+    self.or_client = or_client
     self.forum_map, self.note_map = self._get_forum_map()
     for forum_struct in self.forum_map.values():
-      restructure_forum(forum_struct, self.note_map)
+      new_structure = restructure_forum(forum_struct, self.note_map)
+      for supernote, subnotes in new_structure.items():
+        for subnote in subnotes:
+          text_type, text = get_type_and_text(self.note_map[subnote])
+          chunks = get_tokenized_chunks(corenlp_client, text)
 
 
   def supernode_transform(self):
@@ -136,7 +155,7 @@ class Dataset(object):
 
 
   def _get_forum_structure(self, forum_id):
-    notes = self.client.get_notes(forum=forum_id)
+    notes = self.or_client.get_notes(forum=forum_id)
     naive_note_map = {note.id:note for note in notes}
     naive_parents = {note.id:note.replyto for note in notes}
 

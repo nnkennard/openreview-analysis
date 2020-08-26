@@ -1,5 +1,11 @@
+import corenlp
 import sys
 import openreview_lib as orl
+
+ANNOTATORS = "ssplit tokenize".split()
+
+def chunk_text(text):
+  return text.split("\n\n")
 
 def main():
 
@@ -7,7 +13,8 @@ def main():
 
   # get all forums
 
-  datasets = orl.get_datasets(dataset_file, debug=False)
+  with corenlp.CoreNLPClient(annotators=ANNOTATORS, output_format='conll') as corenlp_client:
+    datasets = orl.get_datasets(dataset_file, corenlp_client, debug=True)
 
   
   # patch together long comments
