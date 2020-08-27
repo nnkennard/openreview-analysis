@@ -23,7 +23,7 @@ CREATE_TEXT_TABLE = """ CREATE TABLE IF NOT EXISTS text (
                                         sentence integer NOT NULL,
                                         tok_index integer NOT NULL,
                                         token text NOT NULL,
-                                        PRIMARY KEY (original_note, sentence, tok_index)
+                                        PRIMARY KEY (original_note, chunk, sentence, tok_index)
                                     ); """
 
 
@@ -50,7 +50,7 @@ def create_table(conn, create_table_sql):
     print(e)
 
 def main():
-  database = r"../sqlite/db/pythonsqlite.db"
+  database = r"sqlite/db/pythonsqlite.db"
   conn = create_connection(database)
   if conn is not None:
     create_table(conn, CREATE_DATASET_TABLE)

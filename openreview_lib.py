@@ -3,6 +3,38 @@ import json
 import openreview
 from tqdm import tqdm
 
+def insert_into_datasets(conn, forum, split, conference):
+  cmd = ''' INSERT INTO
+              datasets(forum, split, conference)
+              VALUES(?, ?, ?); '''
+  cur = conn.cursor()
+  cur.execute(cmd, (forum, split, conference))
+  conn.commit()
+
+
+def insert_into_structure(conn, forum, parent, comment, timestamp, author):
+  cmd = ''' INSERT INTO
+              structure(forum, parent, comment, timestamp, author)
+              VALUES(?, ?, ?, ?, ?);'''
+  cur = conn.cursor()
+  print(forum, parent, comment, timestamp, author)
+  cur.execute(cmd, (forum, parent, comment, timestamp, author))
+  conn.commit()
+
+def insert_into_text(conn, supernote, chunk_idx, original_note, note_type,
+    chunk):
+  cmd = ''' INSERT INTO
+              text(supernote, chunk, original_note, note_type, sentence,
+              tok_index, token)
+              VALUES(?, ?, ?, ?, ?, ?, ?) '''
+  cur = conn.cursor()
+  for i, sentence in enumerate(chunk):
+    for j, token in enumerate(sentence):
+      cur.execute(cmd, (supernote, chunk_idx, original_note, note_type, i, j,
+        token))
+  conn.commit()
+
+
 class Conference(object):
   iclr19 = "iclr19"
   iclr20 = "iclr20"
@@ -14,7 +46,7 @@ INVITATION_MAP = {
 }
 
 
-def get_datasets(dataset_file, corenlp_client, debug=False):
+def get_datasets(dataset_file, corenlp_client, conn, debug=False):
   with open(dataset_file, 'r') as f:
     examples = json.loads(f.read())
 
@@ -24,10 +56,12 @@ def get_datasets(dataset_file, corenlp_client, debug=False):
 
   datasets = {}
   for set_split, forum_ids in examples["id_map"].items():
-    dataset = Dataset(forum_ids, guest_client, corenlp_client, conference, set_split, debug)
+    dataset = Dataset(forum_ids, guest_client, corenlp_client, conn,
+                      conference, set_split, debug)
     datasets[set_split] = dataset
 
   return datasets
+
 
 def get_nonorphans(parents):
   """Remove children whose parents have been deleted for some reason."""
@@ -89,6 +123,7 @@ def restructure_forum(forum_structure, note_map):
 
 TOKEN_INDEX = 1  # Index of token field in conll output
 
+
 def get_tokens_from_tokenized(tokenized):
   lines = tokenized.split("\n")
   sentences = []
@@ -105,9 +140,10 @@ def get_tokens_from_tokenized(tokenized):
 
 def get_tokenized_chunks(client, text):
   chunks = text.split("\n\n")
+  tokenized_chunks = []
   for chunk in chunks:
-    tokens = get_tokens_from_tokenized(client.annotate(chunk))
-    print(tokens)
+    tokenized_chunks.append(get_tokens_from_tokenized(client.annotate(chunk)))
+  return tokenized_chunks
 
 
 def get_type_and_text(note):
@@ -120,27 +156,47 @@ def get_type_and_text(note):
         return text_type, note.content[text_type]
     assert False
 
-
+def get_info(note_id, note_map):
+  note = note_map[note_id]
+  return note.tcdate, flatten_signature(note)
   
+
 class Dataset(object):
-  def __init__(self, forum_ids, or_client, corenlp_client, conference, set_split, debug):
+  def __init__(self, forum_ids, or_client, corenlp_client, conn,
+               conference, set_split, debug):
     submissions = openreview.tools.iterget_notes(
           or_client, invitation=INVITATION_MAP[conference])
     self.forums = [n.forum for n in submissions if n.forum in forum_ids]
     if debug:
       self.forums = self.forums[:50]
     self.or_client = or_client
+
     self.forum_map, self.note_map = self._get_forum_map()
-    for forum_struct in self.forum_map.values():
+    print("Adding structures to database")
+    for forum_id, forum_struct in tqdm(self.forum_map.items()):
+      insert_into_datasets(conn, forum_id, set_split, conference)
+      
+
+    print("Adding individual forums")
+    for forum_id, forum_struct in tqdm(self.forum_map.items()):
       new_structure = restructure_forum(forum_struct, self.note_map)
-      for supernote, subnotes in new_structure.items():
+
+      for child, parent in new_structure.items():
+        timestamp, author = get_info(child, self.note_map)
+        insert_into_structure(conn, forum_id, parent, child, timestamp, author)
+
+      for supernote, subnotes in tqdm(new_structure.items()):
+        chunk_offset = 0
         for subnote in subnotes:
           text_type, text = get_type_and_text(self.note_map[subnote])
           chunks = get_tokenized_chunks(corenlp_client, text)
+          
+          for chunk_idx, chunk in enumerate(chunks):
+            insert_into_text(conn, supernote, chunk_idx + chunk_offset,
+                subnote, text_type, chunk)
+              #for token_idx, token in enumerate(sentence):
+            chunk_offset += len(chunk)
 
-
-  def supernode_transform(self):
-    pass
 
 
   def _get_forum_map(self):
@@ -152,7 +208,6 @@ class Dataset(object):
       note_map.update(forum_note_map)
 
     return root_map, note_map
-
 
   def _get_forum_structure(self, forum_id):
     notes = self.or_client.get_notes(forum=forum_id)
