@@ -24,5 +24,10 @@ python create_db.py --dbfile db/or.db
 
 Populate the tables with conference data
 ```
-python build_or_db.py --dbfile db/or.db --dataset splits/iclr19_split.json
+python build_or_db.py --dbfile db/or.db --inputfile splits/iclr19_split.json
+```
+
+You can now run the example code:
+```
+python example.py --dbfile db/or.db
 ```
