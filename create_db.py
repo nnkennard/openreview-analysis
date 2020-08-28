@@ -12,7 +12,8 @@ CREATE_STRUCTURE_TABLE = """ CREATE TABLE IF NOT EXISTS structure (
                                         parent text NOT NULL,
                                         comment text PRIMARY KEY,
                                         timestamp text NOT NULL,
-                                        author text NOT NULL
+                                        author text NOT NULL,
+                                        split text NOT NULL
                                     ); """
 
 CREATE_TEXT_TABLE = """ CREATE TABLE IF NOT EXISTS text (
@@ -23,6 +24,7 @@ CREATE_TEXT_TABLE = """ CREATE TABLE IF NOT EXISTS text (
                                         sentence integer NOT NULL,
                                         tok_index integer NOT NULL,
                                         token text NOT NULL,
+                                        split text NOT NULL,
                                         PRIMARY KEY (original_note, chunk, sentence, tok_index)
                                     ); """
 

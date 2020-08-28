@@ -3,38 +3,6 @@ import json
 import openreview
 from tqdm import tqdm
 
-def insert_into_datasets(conn, forum, split, conference):
-  cmd = ''' INSERT INTO
-              datasets(forum, split, conference)
-              VALUES(?, ?, ?); '''
-  cur = conn.cursor()
-  cur.execute(cmd, (forum, split, conference))
-  conn.commit()
-
-
-def insert_into_structure(conn, forum, parent, comment, timestamp, author):
-  cmd = ''' INSERT INTO
-              structure(forum, parent, comment, timestamp, author)
-              VALUES(?, ?, ?, ?, ?);'''
-  cur = conn.cursor()
-  print(forum, parent, comment, timestamp, author)
-  cur.execute(cmd, (forum, parent, comment, timestamp, author))
-  conn.commit()
-
-def insert_into_text(conn, supernote, chunk_idx, original_note, note_type,
-    chunk):
-  cmd = ''' INSERT INTO
-              text(supernote, chunk, original_note, note_type, sentence,
-              tok_index, token)
-              VALUES(?, ?, ?, ?, ?, ?, ?) '''
-  cur = conn.cursor()
-  for i, sentence in enumerate(chunk):
-    for j, token in enumerate(sentence):
-      cur.execute(cmd, (supernote, chunk_idx, original_note, note_type, i, j,
-        token))
-  conn.commit()
-
-
 class Conference(object):
   iclr19 = "iclr19"
   iclr20 = "iclr20"
@@ -47,6 +15,17 @@ INVITATION_MAP = {
 
 
 def get_datasets(dataset_file, corenlp_client, conn, debug=False):
+  """Given a dataset file, collect comment structures and text.
+
+    Args:
+      dataset_file: json file produced by make_train_test_split.py
+      corenlp_client: stanford-corenlp client with at least ssplit, tokenize
+      conn: connection to a sqlite3 database
+      debug: set in order to truncate to 50 examples
+
+    Returns:
+      A map from splits to a Dataset object for each
+  """
   with open(dataset_file, 'r') as f:
     examples = json.loads(f.read())
 
@@ -64,7 +43,18 @@ def get_datasets(dataset_file, corenlp_client, conn, debug=False):
 
 
 def get_nonorphans(parents):
-  """Remove children whose parents have been deleted for some reason."""
+  """Remove children whose parents have been deleted for some reason.
+  
+    Args:
+      parents: A map from the id of each child comment to the id of its parent
+
+    Returns:
+      A new map that only include non-deleted comments
+
+    This addresses the problem of orphan subtrees caused by deleted comments.
+  """
+
+  # TODO(nnk): Why does this work??
 
   children = collections.defaultdict(list)
   for child, parent in parents.items():
@@ -76,11 +66,13 @@ def get_nonorphans(parents):
   orphans = sorted(list(nonchildren - set([None])))
 
   while orphans:
+    # Add orphan's children as their parent's children instead
     current_orphan = orphans.pop()
     orphans += children[current_orphan]
     del children[current_orphan]
 
   new_parents = {}
+  # Create a new map in the same format but only with non-orphan children
   for parent, child_list in children.items():
     for child in child_list:
       assert child not in new_parents
@@ -90,20 +82,40 @@ def get_nonorphans(parents):
 
 
 def flatten_signature(note):
+  """Map signature field to a deterministic string.
+     Tbh it looks like most signatures are actually only 1 author long...
+  """
   return  "|".join(sorted(note.signatures))
 
 
 def restructure_forum(forum_structure, note_map):
+  """Merge parent-child comment pairs that are intended to be continuations.
+    Args:
+      forum_structure: The structure of one forum in {parent:child} format
+      note_map: A map from the note ids to the note in openreview.Note format
+
+    Returns:
+      equiv_classes: map from top comment to a list of all its continuation
+      comments
+      equiv_map: map from each comment to the top parent of the continuation it
+      is a part of (map to themselves if they are not a continuation)
+  """
+
   notes = set(
       forum_structure.keys()).union(set(
         forum_structure.values())) - set([None])
 
+  # Each equivalence class is named with the top comment, and contains all
+  # supposed continuations (direct descendants where the authors of all the
+  # descendants are the same as the top comment)
   equiv_classes = {
       note_id:[note_id] for note_id in notes 
     }
 
+  # Order by creation date
   ordered_children = sorted(forum_structure.keys(), key=lambda x:
       note_map[x].tcdate)
+
 
   for child in ordered_children:
     parent = forum_structure[child]
@@ -111,25 +123,41 @@ def restructure_forum(forum_structure, note_map):
       continue
     child_note = note_map[child]
     parent_note = note_map[parent]
+    # Check authors
     if flatten_signature(child_note) == flatten_signature(parent_note):
       for k, v in equiv_classes.items():
         if parent in v:
+          # Merge these two equivalence classes
           equiv_classes[k]+= list(equiv_classes[child])
           del equiv_classes[child]
           break
    
-  return equiv_classes
+  # Maps each merged comment's id to the top parent id of its chain
+  equiv_map = {None:"None"}
+  for supernote, subnotes in equiv_classes.items():
+    for subnote in subnotes:
+      equiv_map[subnote] = supernote
+
+
+  return equiv_classes, equiv_map
 
 
 TOKEN_INDEX = 1  # Index of token field in conll output
 
 
 def get_tokens_from_tokenized(tokenized):
+  """Extract token sequences from CoreNLP output.
+    Args:
+      tokenized: The conll-formatted output from a CoreNLP server with ssplit
+      and tokenize
+    Returns:
+      sentences: A list of sentences in which each sentence is a list of tokens.
+  """
   lines = tokenized.split("\n")
   sentences = []
   current_sentence = []
   for line in lines:
-    if not line.strip():
+    if not line.strip(): # Blank links indicate the end of a sentence
       if current_sentence:
         sentences.append(current_sentence)
       current_sentence = []
@@ -138,15 +166,27 @@ def get_tokens_from_tokenized(tokenized):
   return sentences 
 
 
-def get_tokenized_chunks(client, text):
+def get_tokenized_chunks(corenlp_client, text):
+  """Runs tokenization using a CoreNLP client.
+    Args:
+      corenlp_client: a corenlp client with at least ssplit and tokenize
+      text: raw text
+    Returns:
+      A list of chunks in which a chunk is a list of sentences and a sentence is
+      a list of tokens.
+  """
   chunks = text.split("\n\n")
-  tokenized_chunks = []
-  for chunk in chunks:
-    tokenized_chunks.append(get_tokens_from_tokenized(client.annotate(chunk)))
-  return tokenized_chunks
+  return [get_tokens_from_tokenized(corenlp_client.annotate(chunk) for chunk in
+    chunks]
 
 
 def get_type_and_text(note):
+  """Get the type of comment and the text content.
+    Args:
+      note: an openreview.Note object
+    Returns:
+      The type of comment (review/metareview/etc) and the comment text.
+  """
   if note.replyto is None:
     return "root", ""
   else:
@@ -157,6 +197,13 @@ def get_type_and_text(note):
     assert False
 
 def get_info(note_id, note_map):
+  """Gets relevant note metadata.
+    Args:
+      note_id: the note id from the openreview.Note object
+      note_map: a map from note ids to relevant openreview.Note objects
+    Returns:
+      The creation date and the authors of the note.
+   """
   note = note_map[note_id]
   return note.tcdate, flatten_signature(note)
   
@@ -179,13 +226,15 @@ class Dataset(object):
 
     print("Adding individual forums")
     for forum_id, forum_struct in tqdm(self.forum_map.items()):
-      new_structure = restructure_forum(forum_struct, self.note_map)
+      equiv_classes, equiv_map = restructure_forum(forum_struct, self.note_map)
 
-      for child, parent in new_structure.items():
+      for child, parent in forum_struct.items():
+        parent_supernote = equiv_map[parent]
         timestamp, author = get_info(child, self.note_map)
-        insert_into_structure(conn, forum_id, parent, child, timestamp, author)
+        insert_into_structure(conn, forum_id, parent_supernote,
+            child, timestamp, author, set_split)
 
-      for supernote, subnotes in tqdm(new_structure.items()):
+      for supernote, subnotes in equiv_classes.items():
         chunk_offset = 0
         for subnote in subnotes:
           text_type, text = get_type_and_text(self.note_map[subnote])
@@ -193,9 +242,8 @@ class Dataset(object):
           
           for chunk_idx, chunk in enumerate(chunks):
             insert_into_text(conn, supernote, chunk_idx + chunk_offset,
-                subnote, text_type, chunk)
-              #for token_idx, token in enumerate(sentence):
-            chunk_offset += len(chunk)
+                subnote, text_type, chunk, set_split)
+          chunk_offset += len(chunks)
 
 
 

@@ -15,15 +15,12 @@ def create_connection(db_file):
     print(e)
 
 
-def chunk_text(text):
-  return text.split("\n\n")
-
 def main():
 
   dataset_file = sys.argv[1]
   conn = create_connection("sqlite/db/pythonsqlite.db")
   with corenlp.CoreNLPClient(annotators=ANNOTATORS, output_format='conll') as corenlp_client:
-    datasets = orl.get_datasets(dataset_file, corenlp_client, conn, debug=True)
+    datasets = orl.get_datasets(dataset_file, corenlp_client, conn, debug=False)
     
 
 if __name__ == "__main__":
