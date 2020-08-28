@@ -3,6 +3,8 @@ import json
 import openreview
 from tqdm import tqdm
 
+import openreview_db as ordb
+
 class Conference(object):
   iclr19 = "iclr19"
   iclr20 = "iclr20"
@@ -209,31 +211,50 @@ def get_info(note_id, note_map):
   
 
 class Dataset(object):
+  """An object to hold a list of notes and their metadata.
+
+  Attributes:
+    I don't really think any of the attributes matter; I should probably
+    reformat this to not be an object
+
+  """
   def __init__(self, forum_ids, or_client, corenlp_client, conn,
                conference, set_split, debug):
+    """Initializes and dumps to sqlite3 database.
+
+    Args:
+      forum_ids: list of forum ids (top comment ids) in the dataset
+      or_client: openreview client
+      corenlp_client: stanford-corenlp client for tokenization
+      conn: sqlite3 connection
+      conference: conference name
+      set_split: train/dev/test
+      debug: if True, truncate example list
+    """
     submissions = openreview.tools.iterget_notes(
           or_client, invitation=INVITATION_MAP[conference])
     self.forums = [n.forum for n in submissions if n.forum in forum_ids]
     if debug:
       self.forums = self.forums[:50]
-    self.or_client = or_client
 
-    self.forum_map, self.note_map = self._get_forum_map()
+    self.forum_map, self.note_map = self._get_forum_map(or_client)
     print("Adding structures to database")
     for forum_id, forum_struct in tqdm(self.forum_map.items()):
-      insert_into_datasets(conn, forum_id, set_split, conference)
+      ordb.insert_into_datasets(conn, forum_id, set_split, conference)
       
 
     print("Adding individual forums")
     for forum_id, forum_struct in tqdm(self.forum_map.items()):
       equiv_classes, equiv_map = restructure_forum(forum_struct, self.note_map)
 
+      # Adding forum structure to structure table
       for child, parent in forum_struct.items():
         parent_supernote = equiv_map[parent]
         timestamp, author = get_info(child, self.note_map)
-        insert_into_structure(conn, forum_id, parent_supernote,
+        ordb.insert_into_structure(conn, forum_id, parent_supernote,
             child, timestamp, author, set_split)
 
+      # Adding tokenized text of each comment to text table
       for supernote, subnotes in equiv_classes.items():
         chunk_offset = 0
         for subnote in subnotes:
@@ -241,25 +262,45 @@ class Dataset(object):
           chunks = get_tokenized_chunks(corenlp_client, text)
           
           for chunk_idx, chunk in enumerate(chunks):
-            insert_into_text(conn, supernote, chunk_idx + chunk_offset,
+            ordb.insert_into_text(conn, supernote, chunk_idx + chunk_offset,
                 subnote, text_type, chunk, set_split)
           chunk_offset += len(chunks)
 
 
 
-  def _get_forum_map(self):
+  def _get_forum_map(self, or_client):
+    """Retrieve notes and structure for all forums in this Dataset.
+
+    Args:
+      or_client: openreview client
+
+    Returns:
+      root_map: map from forum id (root of comment tree) to forum structure
+      note_map: map from note id to openreview.Note object
+    """
     root_map = {}
     note_map = {}
     for forum_id in tqdm(self.forums):
-      forum_structure, forum_note_map = self._get_forum_structure(forum_id)
+      forum_structure, forum_note_map = self._get_forum_structure(forum_id,
+          or_client)
       root_map[forum_id] = forum_structure
       note_map.update(forum_note_map)
 
     return root_map, note_map
 
-  def _get_forum_structure(self, forum_id):
-    notes = self.or_client.get_notes(forum=forum_id)
-    naive_note_map = {note.id:note for note in notes}
+  def _get_forum_structure(self, forum_id, or_client):
+    """Retrieves structure and notes of a forum.
+
+    Args:
+      forum_id: id of forum to retrieve
+      or_client: openreview client
+
+    Returns:
+      parents: forum structure in {child_id:parent_id} format
+      note_map: map from note ids to openreview.Note objects
+    """
+    notes = or_client.get_notes(forum=forum_id)
+    naive_note_map = {note.id:note for note in notes} # includes orphans
     naive_parents = {note.id:note.replyto for note in notes}
 
     parents = get_nonorphans(naive_parents)
