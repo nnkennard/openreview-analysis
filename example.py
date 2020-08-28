@@ -4,7 +4,7 @@ import openreview_db as ordb
 
 parser = argparse.ArgumentParser(
     description='Example for accessing OpenReview data')
-parser.add_argument('-d', '--dbfile', default="sqlite/db/pythonsqlite.db",
+parser.add_argument('-d', '--dbfile', default="db/or.db",
     type=str, help='path to database file')
 
 
