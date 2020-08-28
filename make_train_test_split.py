@@ -1,3 +1,4 @@
+import argparse
 import collections
 import json
 import openreview
@@ -7,6 +8,17 @@ import random
 from tqdm import tqdm
 
 import openreview_lib as orl
+
+
+parser = argparse.ArgumentParser(
+    description='Create stratified train/dev/test split of OpenReview forums.')
+parser.add_argument('-o', '--outputdir', default="splits/",
+    type=str, help="Where to dump output json file")
+parser.add_argument('-c', '--conference', default="iclr19",
+    type=str, help="A conference from [iclr19, iclr20]")
+
+
+random.seed(23)
 
 def get_forum_ids(guest_client, invitation):
   submissions = openreview.tools.iterget_notes(
@@ -31,13 +43,15 @@ class Forum(object):
 
 def main():
 
-  conference = sys.argv[1]
+  args = parser.parse_args()
 
-  guest_client = openreview.Client(baseurl='https://openreview.net')
+  assert args.conference in orl.Conference.ALL
 
-  forum_ids = get_forum_ids(guest_client, orl.INVITATION_MAP[conference])
+  guest_client = openreview.Client(baseurl='https://api.openreview.net')
 
-  len_counter = collections.Counter()
+  forum_ids = get_forum_ids(guest_client, orl.INVITATION_MAP[args.conference])
+
+  len_counter = collections.Counter() # Cumulative count of forum lengths
 
   forums = []
   for forum_id in tqdm(forum_ids):
@@ -45,6 +59,9 @@ def main():
     len_counter[new_forum.num_notes] += 1
     forums.append(new_forum)
 
+
+  # Ensuring that top and bottom quartile (and middle) are spread evenly between
+  # splits
   total_notes = sum(len_counter.values())
   bottom_quintile_count = int(0.2 * total_notes)
   top_quintile_count = int(0.8 * total_notes)
@@ -84,11 +101,12 @@ def main():
 
 
   dataset = {
-    "conference": conference,
-    "url": orl.INVITATION_MAP[conference],
+    "conference": args.conference,
+    "url": orl.INVITATION_MAP[args.conference],
     "id_map": forum_name_map}
 
-  with open(conference + "_split.json", 'w') as f:
+  output_file = "".join([args.outputdir, "/", args.conference, "_split.json"])
+  with open(output_file, 'w') as f:
     f.write(json.dumps(dataset))
 
 

@@ -178,8 +178,8 @@ def get_tokenized_chunks(corenlp_client, text):
       a list of tokens.
   """
   chunks = text.split("\n\n")
-  return [get_tokens_from_tokenized(corenlp_client.annotate(chunk) for chunk in
-    chunks]
+  return [get_tokens_from_tokenized(corenlp_client.annotate(chunk))
+      for chunk in chunks]
 
 
 def get_type_and_text(note):
