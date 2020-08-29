@@ -17,7 +17,6 @@ parser.add_argument('-s', '--debug', action="store_true",
 ANNOTATORS = "ssplit tokenize".split()
 
 
-
 def main():
 
   args = parser.parse_args()

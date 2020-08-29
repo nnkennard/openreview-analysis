@@ -27,7 +27,7 @@ def main():
   cur.execute("SELECT * FROM text WHERE split=?", ("train",))
 
   rows = cur.fetchall()
-  obj = ordb.crunch_rows(rows)
+  obj = ordb.crunch_text_rows(rows)
   print(obj[sorted(obj.keys())[0]])
 
 

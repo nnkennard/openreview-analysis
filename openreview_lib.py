@@ -249,10 +249,11 @@ class Dataset(object):
 
       # Adding forum structure to structure table
       for child, parent in forum_struct.items():
-        parent_supernote = equiv_map[parent]
-        timestamp, author = get_info(child, self.note_map)
-        ordb.insert_into_structure(conn, forum_id, parent_supernote,
-            child, timestamp, author, set_split)
+        if child in equiv_classes:
+          parent_supernote = equiv_map[parent]
+          timestamp, author = get_info(child, self.note_map)
+          ordb.insert_into_structure(conn, forum_id, parent_supernote,
+                child, timestamp, author, set_split)
 
       # Adding tokenized text of each comment to text table
       for supernote, subnotes in equiv_classes.items():

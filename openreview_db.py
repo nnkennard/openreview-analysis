@@ -92,7 +92,8 @@ def collapse_dict(input_dict):
   # This is a garbage way to get an error if the keys are not ints
   return [input_dict[i] for i in sorted(input_dict.keys())]
 
-def crunch_rows(rows):
+
+def crunch_text_rows(rows):
   """Crunch rows from text table back into a more readable format.
 
   TODO(nnk): This, but in a non-horrible way
@@ -111,5 +112,29 @@ def crunch_rows(rows):
     collapse_dict(chunk_dict)]
 
   return texts
+
+
+Comment = collections.namedtuple("Comment",
+    "forum_id parent_id comment_id timestamp author")
+
+    
+def crunch_structure_rows(rows):
+  """Crunch rows from text table back into a more readable format.
+
+  TODO(nnk): This, but in a non-horrible way
+  """
+  structure_builder = collections.defaultdict(lambda : collections.defaultdict(lambda:
+    collections.defaultdict(list)))
+
+  comment_map = {}
+  structure_map = collections.defaultdict(dict)
+
+  for row in rows:
+    forum, parent, comment = row["forum"], row["parent"], row["comment"]
+    timestamp, author = row["timestamp"], row["author"]
+    comment_map[comment] = Comment(forum, parent, comment, timestamp, author)
+    structure_map[forum][comment] = parent
+
+  return structure_map, comment_map
     
 
