@@ -10,11 +10,10 @@ parser.add_argument('-d', '--dbfile', default="db/or.db",
 
 
 def dict_factory(cursor, row):
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
-
+  d = {}
+  for idx, col in enumerate(cursor.description):
+    d[col[0]] = row[idx]
+  return d
 
 
 class Participants(object):
@@ -48,46 +47,59 @@ def shorten_author(author):
     assert author.startswith("~")
     return Participants.NAMED
 
+
 def is_reviewer(author):
   return "AnonReviewer" in author
 
-def shorten_sequence(sequence):
-  new_sequence = []
-  for author in sequence:
-    if is_reviewer(author):
-      if Participants.REVIEWER in new_sequence:
-        new_sequence.append(Participants.REVIEWER_B)
-      else:
-        new_sequence.append(Participants.REVIEWER)
-    else:
-      new_sequence.append(shorten_author(author))
-  return new_sequence
+
+def authorify_sequence(sequence, comment_map):
+  return [shorten_author(comment_map[comment_id].author)
+      for comment_id in sequence]
+  
+
+def get_path_to_node(node, comment_map):
+  ancestor_ids = []
+  curr_ancestor_id = node
+  while True:
+    curr_ancestor = comment_map[curr_ancestor_id]
+    ancestor_ids.append(curr_ancestor.comment_id)
+    curr_ancestor_id = curr_ancestor.parent_id
+    if curr_ancestor_id == "None":
+      break
+
+  return list(reversed(ancestor_ids))
 
   
 def characterize_path(terminal_node, comment_map):
-  ancestors = []
-  curr_ancestor = terminal_node
-  while not curr_ancestor == "None":
-    ancestors.append(comment_map[curr_ancestor].author)
-    curr_ancestor = comment_map[curr_ancestor].parent_id
+  nodes_path = get_path_to_node(terminal_node, comment_map)
+  full_authors_path = [comment_map[node].author for node in nodes_path]
+  authors_path = authorify_sequence(nodes_path, comment_map)
 
-  sequence = list(reversed(ancestors))
-  initiator = sequence[1]
+  reviewer_count = 0
+  reviewer_roles = {}
+  characteristic_path = []
 
+  for node, short_author in zip(nodes_path, authors_path):
+    if short_author in [Participants.CONFERENCE, Participants.AUTHOR,
+        Participants.AC]:
+      if short_author not in characteristic_path:
+        characteristic_path.append(short_author)
+    else:
+      assert short_author == Participants.REVIEWER
+      reviewer_name = comment_map[node].author
+      if reviewer_name in reviewer_roles:
+        continue
+      else:
+        reviewer_roles[reviewer_name] = reviewer_count
+        characteristic_path.append(Participants.REVIEWER + str(reviewer_count))
+        reviewer_count += 1
 
-  participants = sequence[:2]
-  for next_participant in sequence[2:]:
-    if next_participant not in participants:
-      participants.append(next_participant)
+  if len(set(characteristic_path)) > 4:
+    characteristic_path = characteristic_path[:3] + [Participants.MULTIPLE]
 
-  if len(participants) > 3:
-    final = shorten_sequence(participants[:3]) + [Participants.MULTIPLE]
-  else:
-    final = shorten_sequence(participants[:4])
+  assert len(characteristic_path) <= 4
 
-  return final
-
-
+  return tuple(characteristic_path)
 
 
 def prune_unofficial(parents, comment_map):
@@ -112,6 +124,7 @@ def prune_unofficial(parents, comment_map):
 
   return official_parents
 
+
 def count_author_types(node_list, comment_map):
   nodes_counter = collections.Counter(
       [shorten_author(comment_map[node_id].author)
@@ -129,7 +142,8 @@ def count_nodes(structure_map):
     parents.update(set(v.values()))
 
   return parents - set(["None"]), children
-   
+
+
 def main():
 
   args = parser.parse_args()
@@ -167,8 +181,15 @@ def main():
   print("Total number of nonparents", len(children - parents))
   
   characterized_paths = collections.defaultdict(list)
-  #for terminal_node in children - parents:
-  #  print(" ".join(characterize_path(terminal_node, comment_map)))
+  for terminal_node in children - parents:
+    path_to_node = get_path_to_node(terminal_node, comment_map)
+    characterized_paths[characterize_path(terminal_node,
+      comment_map)].append(path_to_node)
+
+  print(" ")
+  print("Path characteristic counts")
+  for char_path, paths in characterized_paths.items():
+    print("_".join(char_path) + " " + str(len(paths)))
 
 
 
