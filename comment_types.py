@@ -16,11 +16,6 @@ def dict_factory(cursor, row):
     return d
 
 
-THREAD_PROFILES = {
-    # Thread profiles are for two participants
-    "review-rebuttal":  ["root", "reviewer", "author"]
-    }
-
 def is_by_author(comment):
   if "Author" in comment.author:
     if "Authors" not in comment.author:
@@ -41,23 +36,6 @@ def is_by_ac(comment):
 def is_by_conference(comment):
   return comment.author == "ICLR.cc/2019/Conference"
 
-def shorten_author(comment):
-  if is_by_author(comment):
-    return Participants.AUTHOR 
-  elif is_by_reviewer(comment):
-    return Participants.REVIEWER
-  elif is_by_ac(comment):
-    return Participants.AC
-  elif is_by_anonymous(comment):
-    anon_dsds
-    return "Anon"
-  elif is_by_conference(comment):
-    return Participants.CONFERENCE
-  else:
-    named_dsds
-    return "Named"
-
-
 def is_official(comment):
   return (is_by_ac(comment) or is_by_reviewer(comment)
       or is_by_author(comment) or "Conference" in comment.author)
@@ -70,6 +48,8 @@ class Participants(object):
   REVIEWER = "Reviewer"
   REVIEWER_B = "Reviewer B"
   MULTIPLE = "Multiple"
+  ANONYMOUS = "Anonymous"
+  NAMED = "Named"
 
 
 def shorten_author(author):
@@ -81,9 +61,11 @@ def shorten_author(author):
     return Participants.AC
   elif Participants.CONFERENCE in author:
     return Participants.CONFERENCE
+  elif author == "(anonymous)":
+    return Participants.ANONYMOUS
   else:
-    dsds
-
+    assert author.startswith("~")
+    return Participants.NAMED
 
 def is_reviewer(author):
   return "AnonReviewer" in author
@@ -122,10 +104,6 @@ def characterize_path(terminal_node, comment_map):
   else:
     final = shorten_sequence(participants[:4])
 
-  #print(" ".join(participants))
-  #print(" ".join(final))
-  #print("-" * 80)
-
   return final
 
 
@@ -153,7 +131,24 @@ def prune_unofficial(parents, comment_map):
 
   return official_parents
 
+def count_author_types(node_list, comment_map):
+  nodes_counter = collections.Counter(
+      [shorten_author(comment_map[node_id].author)
+        for node_id in node_list - set(["None"])])
+  for k in sorted(nodes_counter.keys()):
+    print(k+" "+str(nodes_counter[k]))
+  print(" ")
 
+
+def count_nodes(structure_map):
+  parents = set()
+  children = set()
+  for k, v in structure_map.items():
+    children.update(set(v.keys()))
+    parents.update(set(v.values()))
+
+  return parents - set(["None"]), children
+   
 def main():
 
   args = parser.parse_args()
@@ -171,30 +166,28 @@ def main():
 
   structure_map, comment_map = ordb.crunch_structure_rows(rows)
 
-  all_nodes = set()
-  for k, v in structure_map.items():
-    all_nodes.update(set(v.keys()))
-    all_nodes.update(set(v.values()))
+  print("Author type counts (all)")
+  parents, children = count_nodes(structure_map) 
+  all_nodes = parents.union(children)
+  count_author_types(all_nodes, comment_map)
   print("Total number of nodes", len(all_nodes))
-  
+  print("Total number of nonparents", len(children - parents))
+     
 
   official_structure_map = {
       forum_id:prune_unofficial(structure, comment_map)
       for forum_id, structure in structure_map.items()}
 
-  all_nodes = set()
-  parent_nodes = set()
-  child_nodes = set()
-  for k, v in official_structure_map.items():
-    child_nodes.update(set(v.keys()))
-    parent_nodes.update(set(v.values()))
-  print("Total number of official nodes", len(parent_nodes.union(child_nodes)))
-
-  non_parents = child_nodes - parent_nodes
-
-  print("Total number of paths", len(non_parents))
-
+  parents, children = count_nodes(official_structure_map) 
+  all_nodes = parents.union(children)
+  print("Author type counts (official)")
+  count_author_types(all_nodes, comment_map)
+  print("Total number of official nodes", len(all_nodes))
+  print("Total number of nonparents", len(children - parents))
+  
+  characterized_paths = collections.defaultdict(list)
   for terminal_node in non_parents:
+
     print(" ".join(characterize_path(terminal_node, comment_map)))
 
 
