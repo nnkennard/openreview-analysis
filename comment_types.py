@@ -16,30 +16,6 @@ def dict_factory(cursor, row):
     return d
 
 
-def is_by_author(comment):
-  if "Author" in comment.author:
-    if "Authors" not in comment.author:
-      dsds
-    else:
-      return True
-  return False
-
-def is_by_reviewer(comment):
-  return "AnonReviewer" in comment.author
-
-def is_by_anonymous(comment):
-  return comment.author == "(anonymous)"
-
-def is_by_ac(comment):
-  return "Area_Chair" in comment.author
-
-def is_by_conference(comment):
-  return comment.author == "ICLR.cc/2019/Conference"
-
-def is_official(comment):
-  return (is_by_ac(comment) or is_by_reviewer(comment)
-      or is_by_author(comment) or "Conference" in comment.author)
-
 
 class Participants(object):
   CONFERENCE = "Conference"
@@ -50,6 +26,11 @@ class Participants(object):
   MULTIPLE = "Multiple"
   ANONYMOUS = "Anonymous"
   NAMED = "Named"
+
+
+def is_official(comment):
+  return shorten_author(comment.author) in [Participants.AUTHOR,
+      Participants.REVIEWER, Participants.AC, Participants.CONFERENCE]
 
 
 def shorten_author(author):
@@ -186,9 +167,8 @@ def main():
   print("Total number of nonparents", len(children - parents))
   
   characterized_paths = collections.defaultdict(list)
-  for terminal_node in non_parents:
-
-    print(" ".join(characterize_path(terminal_node, comment_map)))
+  #for terminal_node in children - parents:
+  #  print(" ".join(characterize_path(terminal_node, comment_map)))
 
 
 
