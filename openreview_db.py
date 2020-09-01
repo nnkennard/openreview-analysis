@@ -7,9 +7,18 @@ def create_connection(db_file):
   conn = None
   try:
     conn = sqlite3.connect(db_file)
+    conn.row_factory = dict_factory
     return conn
   except Error as e:
     print(e)
+
+def dict_factory(cursor, row):
+  d = {}
+  for idx, col in enumerate(cursor.description):
+    d[col[0]] = row[idx]
+  return d
+
+
 
 def create_table(conn, create_table_sql):
   """ create a table from the create_table_sql statement
