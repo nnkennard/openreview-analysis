@@ -35,7 +35,7 @@ def create_table(conn, create_table_sql):
 CREATE_COMMENTS_TABLE = """ CREATE TABLE IF NOT EXISTS comments (
     forum text NOT NULL,
     parent_supernote text NOT NULL,
-    comment_supernote text PRIMARY KEY,
+    comment_supernote text NOT NULL,
     original_note text NOT NULL,
 
     timestamp text NOT NULL,
@@ -57,7 +57,11 @@ def insert_into_comments(conn,
     sentence, tok_index, token, split):
   """Insert a record into the datasets table (train-test split)."""
   cmd = ''' INSERT INTO
-              datasets(forum, split, conference)
+              comments(
+    forum, parent_supernote, comment_supernote, original_note,
+    timestamp, author, note_type, chunk,
+    sentence, tok_index, token, split
+              )
               VALUES(?, ?, ?, ?,
                      ?, ?, ?, ?,
                      ?, ?, ?, ?); '''
@@ -84,8 +88,9 @@ def crunch_text_rows(rows):
     collections.defaultdict(list)))
 
   for row in rows:
-    supernote, chunk, sentence, token = (row["supernote"], row["chunk"],
-    row["sentence"], row["token"])
+    print(row.keys())
+    supernote, chunk, sentence, token = (row["comment_supernote"],
+        row["chunk"], row["sentence"], row["token"])
     texts_builder[supernote][chunk][sentence].append(token)
 
   texts = {}
@@ -103,23 +108,3 @@ CharacterizedPath = collections.namedtuple("CharacterizedPath",
 "comments char".split())
 
     
-def crunch_structure_rows(rows):
-  """Crunch rows from text table back into a more readable format.
-
-  TODO(nnk): This, but in a non-horrible way
-  """
-  structure_builder = collections.defaultdict(lambda : collections.defaultdict(lambda:
-    collections.defaultdict(list)))
-
-  comment_map = {}
-  structure_map = collections.defaultdict(dict)
-
-  for row in rows:
-    forum, parent, comment = row["forum"], row["parent"], row["comment"]
-    timestamp, author = row["timestamp"], row["author"]
-    comment_map[comment] = Comment(forum, parent, comment, timestamp, author)
-    structure_map[forum][comment] = parent
-
-  return structure_map, comment_map
-    
-

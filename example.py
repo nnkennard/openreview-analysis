@@ -1,6 +1,6 @@
 import sqlite3
 import argparse
-import openreview_db as ordb
+import lib.openreview_db as ordb
 
 parser = argparse.ArgumentParser(
     description='Example for accessing OpenReview data')
@@ -24,7 +24,7 @@ def main():
 
 
   cur = conn.cursor()
-  cur.execute("SELECT * FROM text WHERE split=?", ("train",))
+  cur.execute("SELECT * FROM comments WHERE split=?", ("train",))
 
   rows = cur.fetchall()
   obj = ordb.crunch_text_rows(rows)

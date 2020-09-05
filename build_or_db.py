@@ -21,7 +21,7 @@ def main():
   args = parser.parse_args()
   conn = ordb.create_connection(args.dbfile)
   if conn is not None:
-    ordb.create_table(conn, ordb.CREATE_COMMENT_TABLE)
+    ordb.create_table(conn, ordb.CREATE_COMMENTS_TABLE)
   else:
     print("Error! cannot create the database connection.")
 
@@ -29,7 +29,7 @@ def main():
   conn = ordb.create_connection(args.dbfile)
   with corenlp.CoreNLPClient(
       annotators=ANNOTATORS, output_format='conll') as corenlp_client:
-    datasets = orl.get_datasets(
+    orl.get_datasets(
         args.inputfile, corenlp_client, conn, debug=args.debug)
     
 

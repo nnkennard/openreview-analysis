@@ -37,11 +37,8 @@ def get_datasets(dataset_file, corenlp_client, conn, debug=False):
 
   datasets = {}
   for set_split, forum_ids in examples["id_map"].items():
-    dataset = Dataset(forum_ids, guest_client, corenlp_client, conn,
+    build_dataset(forum_ids, guest_client, corenlp_client, conn,
                       conference, set_split, debug)
-    datasets[set_split] = dataset
-
-  return datasets
 
 
 def get_nonorphans(parents):
@@ -87,7 +84,7 @@ def flatten_signature(note):
   """Map signature field to a deterministic string.
      Tbh it looks like most signatures are actually only 1 author long...
   """
-  return  "|".join(sorted(note.signatures))
+  return  "|".join(sorted(sig.split("/")[-1] for sig in note.signatures))
 
 
 def restructure_forum(forum_structure, note_map):
@@ -273,7 +270,7 @@ def build_dataset(forum_ids, or_client, corenlp_client, conn,
         or_client, invitation=INVITATION_MAP[conference])
   forums = [n.forum for n in submissions if n.forum in forum_ids]
   if debug:
-    forums = forums[:50]
+    forums = forums[:10]
 
   forum_map, note_map = get_forum_map(forums, or_client)
   for forum_id, forum_struct in tqdm(forum_map.items()):
@@ -282,15 +279,20 @@ def build_dataset(forum_ids, or_client, corenlp_client, conn,
     # Adding tokenized text of each comment to text table
     for supernote, subnotes in equiv_classes.items():
       chunk_offset = 0
+      timestamp, author = get_info(supernote, note_map)
       for subnote in subnotes:
         text_type, text = get_type_and_text(note_map[subnote])
         chunks = get_tokenized_chunks(corenlp_client, text)
         
         for chunk_idx, chunk in enumerate(chunks):
-          ordb.insert_into_text(conn,
-              forum_id, equiv_map[forum_struct[supernote]], timestamp, author,
-              supernote, chunk_idx + chunk_offset,
-              subnote, text_type, chunk, set_split)
+          for sentence_idx, sentence in enumerate(chunk):
+            for token_idx, token in enumerate(sentence):
+              ordb.insert_into_comments(conn,
+                  forum_id, equiv_map[forum_struct[supernote]], supernote, subnote,
+                  timestamp, author, text_type, chunk_idx + chunk_offset,
+                  sentence_idx, token_idx, token, set_split)
+
         chunk_offset += len(chunks)
+
 
 
