@@ -126,6 +126,9 @@ def crunch_text_rows(rows):
 Comment = collections.namedtuple("Comment",
     "forum_id parent_id comment_id timestamp author")
 
+CharacterizedPath = collections.namedtuple("CharacterizedPath",
+"comments char".split())
+
     
 def crunch_structure_rows(rows):
   """Crunch rows from text table back into a more readable format.

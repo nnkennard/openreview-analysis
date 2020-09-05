@@ -95,9 +95,9 @@ def main():
         _, review_meta, rebuttal_meta = path.comments[:3]
         review = text_data[review_meta.comment_id]
         rebuttal = text_data[rebuttal_meta.comment_id]
+        print("\t".join(str(i) for i in [len(review), len(rebuttal)]))
 
         review_map, rebuttal_map, lcs_map = check_exact_match(review, rebuttal)
-        print(lcs_map)
 
         for review_chunk_id, rebuttal_match_chunk_id in review_map.items():
           if rebuttal_match_chunk_id is None:
