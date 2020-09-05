@@ -32,67 +32,40 @@ def create_table(conn, create_table_sql):
   except Error as e:
     print(e)
 
+CREATE_COMMENTS_TABLE = """ CREATE TABLE IF NOT EXISTS comments (
+    forum text NOT NULL,
+    parent_supernote text NOT NULL,
+    comment_supernote text PRIMARY KEY,
+    original_note text NOT NULL,
 
-CREATE_DATASET_TABLE = """ CREATE TABLE IF NOT EXISTS datasets (
-                                        forum text PRIMARY KEY,
-                                        split text NOT NULL,
-                                        conference text NOT NULL
-                                    ); """
+    timestamp text NOT NULL,
+    author text NOT NULL,
+    note_type text NOT NULL,
+
+    chunk integer NOT NULL,
+    sentence integer NOT NULL,
+    tok_index integer NOT NULL,
+    token text NOT NULL,
+
+    split text NOT NULL,
+    PRIMARY KEY (original_note, chunk, sentence, tok_index)); """
 
 
-def insert_into_datasets(conn, forum, split, conference):
+def insert_into_comments(conn,
+    forum, parent_supernote, comment_supernote, original_note,
+    timestamp, author, note_type, chunk,
+    sentence, tok_index, token, split):
   """Insert a record into the datasets table (train-test split)."""
   cmd = ''' INSERT INTO
               datasets(forum, split, conference)
-              VALUES(?, ?, ?); '''
+              VALUES(?, ?, ?, ?,
+                     ?, ?, ?, ?,
+                     ?, ?, ?, ?); '''
   cur = conn.cursor()
-  cur.execute(cmd, (forum, split, conference))
-  conn.commit()
-
-CREATE_STRUCTURE_TABLE = """ CREATE TABLE IF NOT EXISTS structure (
-                                        forum text NOT NULL,
-                                        parent text NOT NULL,
-                                        comment text PRIMARY KEY,
-                                        timestamp text NOT NULL,
-                                        author text NOT NULL,
-                                        split text NOT NULL
-                                    ); """
-
-
-
-def insert_into_structure(conn, forum, parent, comment, timestamp, author, split):
-  """Insert a record into the structure table (forum-level structure)."""
-  cmd = ''' INSERT INTO
-              structure(forum, parent, comment, timestamp, author, split)
-              VALUES(?, ?, ?, ?, ?, ?);'''
-  cur = conn.cursor()
-  cur.execute(cmd, (forum, parent, comment, timestamp, author, split))
-  conn.commit()
-CREATE_TEXT_TABLE = """ CREATE TABLE IF NOT EXISTS text (
-                                        supernote text NOT NULL,
-                                        chunk integer NOT NULL,
-                                        original_note text NOT NULL,
-                                        note_type text NOT NULL,
-                                        sentence integer NOT NULL,
-                                        tok_index integer NOT NULL,
-                                        token text NOT NULL,
-                                        split text NOT NULL,
-                                        PRIMARY KEY (original_note, chunk, sentence, tok_index)
-                                    ); """
-
-
-def insert_into_text(conn, supernote, chunk_idx, original_note, note_type,
-    chunk, split):
-  """Insert a record into the text table (actual comment text)."""
-  cmd = ''' INSERT INTO
-              text(supernote, chunk, original_note, note_type, sentence,
-              tok_index, token, split)
-              VALUES(?, ?, ?, ?, ?, ?, ?, ?) '''
-  cur = conn.cursor()
-  for sentence_i, sentence in enumerate(chunk):
-    for token_i, token in enumerate(sentence):
-      cur.execute(cmd, (supernote, chunk_idx, original_note, note_type,
-        sentence_i, token_i, token, split))
+  cur.execute(cmd, (
+    forum, parent_supernote, comment_supernote, original_note,
+    timestamp, author, note_type, chunk,
+    sentence, tok_index, token, split))
   conn.commit()
 
 
