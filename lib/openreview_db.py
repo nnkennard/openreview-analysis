@@ -88,7 +88,6 @@ def crunch_text_rows(rows):
     collections.defaultdict(list)))
 
   for row in rows:
-    print(row.keys())
     supernote, chunk, sentence, token = (row["comment_supernote"],
         row["chunk"], row["sentence"], row["token"])
     texts_builder[supernote][chunk][sentence].append(token)
