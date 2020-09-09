@@ -1,9 +1,12 @@
 import collections
 import json
 import openreview
+
+from recordtype import recordtype
 from tqdm import tqdm
 
 import lib.openreview_db as ordb
+
 
 class Conference(object):
   iclr19 = "iclr19"
@@ -15,9 +18,14 @@ INVITATION_MAP = {
     Conference.iclr20:'ICLR.cc/2020/Conference/-/Blind_Submission',
 }
 
+CommentRow = recordtype("CommentRow",
+  """forum_id split parent_supernote comment_supernote
+  timestamp author author_type or_text_type
+  comment_type original_id chunk_idx sentence_idx
+  token_idx token""", default=None)
 
 def get_datasets(dataset_file, corenlp_client, conn, debug=False):
-  """Given a dataset file, collect comment structures and text.
+  """Given a dataset file, enter it into a sqlite3 database. 
 
     Args:
       dataset_file: json file produced by make_train_test_split.py
@@ -25,8 +33,6 @@ def get_datasets(dataset_file, corenlp_client, conn, debug=False):
       conn: connection to a sqlite3 database
       debug: set in order to truncate to 50 examples
 
-    Returns:
-      A map from splits to a Dataset object for each
   """
   with open(dataset_file, 'r') as f:
     examples = json.loads(f.read())
@@ -40,6 +46,8 @@ def get_datasets(dataset_file, corenlp_client, conn, debug=False):
     build_dataset(forum_ids, guest_client, corenlp_client, conn,
                       conference, set_split, debug)
 
+
+    
 
 def get_nonorphans(parents):
   """Remove children whose parents have been deleted for some reason.
@@ -82,8 +90,9 @@ def get_nonorphans(parents):
 
 def flatten_signature(note):
   """Map signature field to a deterministic string.
-     Tbh it looks like most signatures are actually only 1 author long...
+     Tbh it looks like most signatures are actually only 1 author long..
   """
+  assert len(note.signatures) == 1
   return  "|".join(sorted(sig.split("/")[-1] for sig in note.signatures))
 
 
@@ -179,23 +188,6 @@ def get_tokenized_chunks(corenlp_client, text):
       for chunk in chunks]
 
 
-def get_type_and_text(note):
-  """Get the type of comment and the text content.
-    Args:
-      note: an openreview.Note object
-    Returns:
-      The type of comment (review/metareview/etc) and the comment text.
-  """
-  if note.replyto is None:
-    return "root", ""
-  else:
-    for text_type in ["review", "comment", "withdrawal confirmation",
-    "metareview"]:
-      if text_type in note.content:
-        return text_type, note.content[text_type]
-    assert False
-
-
 def get_info(note_id, note_map):
   """Gets relevant note metadata.
     Args:
@@ -205,9 +197,14 @@ def get_info(note_id, note_map):
       The creation date and the authors of the note.
    """
   note = note_map[note_id]
-  return note.tcdate, flatten_signature(note)
-  
-
+  if note.replyto is None:
+    return "root", "", note.tcdate, flatten_signature(note)
+  else:
+    for text_type in ["review", "comment", "withdrawal confirmation",
+    "metareview"]:
+      if text_type in note.content:
+        return text_type, note.content[text_type], note.tcdate, flatten_signature(note)
+    assert False
 
 def get_forum_map(forums, or_client):
   """Retrieve notes and structure for all forums in this Dataset.
@@ -229,6 +226,7 @@ def get_forum_map(forums, or_client):
     note_map.update(forum_note_map)
 
   return root_map, note_map
+
 
 def get_forum_structure(forum_id, or_client):
   """Retrieves structure and notes of a forum.
@@ -276,23 +274,36 @@ def build_dataset(forum_ids, or_client, corenlp_client, conn,
   for forum_id, forum_struct in tqdm(forum_map.items()):
     equiv_classes, equiv_map = restructure_forum(forum_struct, note_map)
 
+    forum_rows = []
+
     # Adding tokenized text of each comment to text table
     for supernote, subnotes in equiv_classes.items():
+      text_type, _, timestamp, supernote_author = get_info(supernote, note_map)
+      supernote_as_dict = CommentRow(
+          forum_id, set_split, equiv_map[forum_struct[supernote]], supernote, 
+          timestamp, supernote_author, "~AUTHOR_TYPE", text_type, 
+          "~COMMENT_TYPE")._asdict()
       chunk_offset = 0
-      timestamp, author = get_info(supernote, note_map)
       for subnote in subnotes:
-        text_type, text = get_type_and_text(note_map[subnote])
+        text_type, text, _, subnote_author = get_info(subnote, note_map)
+        assert subnote_author == supernote_author
+        text = "Hahaha here is a sentence for now. And another one; I hope this works."
         chunks = get_tokenized_chunks(corenlp_client, text)
         
         for chunk_idx, chunk in enumerate(chunks):
           for sentence_idx, sentence in enumerate(chunk):
             for token_idx, token in enumerate(sentence):
-              ordb.insert_into_comments(conn,
-                  forum_id, equiv_map[forum_struct[supernote]], supernote, subnote,
-                  timestamp, author, text_type, chunk_idx + chunk_offset,
-                  sentence_idx, token_idx, token, set_split)
+              new_row = CommentRow(supernote_as_dict)
+              new_row.chunk_idx = chunk_idx + chunk_offset
+              new_row.sentence_idx = sentence_idx
+              new_row.token_idx = token_idx
+              new_row.token = token
+              forum_rows.append(new_row)
 
         chunk_offset += len(chunks)
+
+      for row in forum_rows:
+        print(row)
 
 
 

@@ -98,12 +98,3 @@ def crunch_text_rows(rows):
     collapse_dict(chunk_dict)]
 
   return texts
-
-
-Comment = collections.namedtuple("Comment",
-    "forum_id parent_id comment_id timestamp author")
-
-CharacterizedPath = collections.namedtuple("CharacterizedPath",
-"comments char".split())
-
-    

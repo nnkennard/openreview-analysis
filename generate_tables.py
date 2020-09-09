@@ -65,6 +65,45 @@ def count_comment_types(rows):
   result["rebuttals"] = len(rebuttals)
   return result
 
+def get_examples(rows):
+  forums = collections.defaultdict(dict)
+  reviews = []
+  not_reviews = []
+  review_rebuttals = collections.defaultdict(list)
+
+  for row in rows:
+    shortened_author = shorten_author(row["author"])
+    if (row["parent_supernote"] == row["forum"]
+        and shortened_author == AuthorCategories.REVIEWER):
+      reviews.append(row["comment_supernote"])
+    else:
+      not_reviews.append(row["comment_supernote"])
+    if shortened_author == AuthorCategories.AUTHOR:
+      if row["parent_supernote"] in reviews:
+        review_rebuttals[row["forum"]].append(
+            (row["parent_supernote"], row["comment_supernote"]))
+      elif row["parent_supernote"] == row["forum"]:
+        continue
+      else:
+        assert row["parent_supernote"] in not_reviews
+
+
+  inter_pairs = collections.defaultdict(list)
+  for forum, intra_pairs in review_rebuttals.items():
+    reviews, rebuttals = zip(*intra_pairs)
+    for review in reviews:
+      for rebuttal in rebuttals:
+        maybe_inter_pair = (review, rebuttal)
+        if maybe_inter_pair not in intra_pairs:
+          inter_pairs[forum].append(maybe_inter_pair)
+    #print("*", len(intra_pairs))
+    #print("**", len(inter_pairs[forum]))
+
+  print(len(inter_pairs), len(review_rebuttals))
+  print(
+      len(sum(inter_pairs.values(), [])),
+      len(sum(review_rebuttals.values(), [])))
+
 def main():
 
   args = parser.parse_args()
@@ -86,6 +125,7 @@ def main():
     cur.execute("SELECT DISTINCT forum, parent_supernote, comment_supernote, author, note_type, timestamp FROM comments WHERE split=? ORDER BY timestamp", (split,))
     rows = cur.fetchall()
     table_maps[split].update(count_comment_types(rows))
+    get_examples(rows)
 
   for k, v in table_maps.items():
     for g, s in v.items():
