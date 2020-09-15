@@ -10,29 +10,6 @@ parser = argparse.ArgumentParser(
     description='Example for accessing OpenReview data')
 parser.add_argument('-d', '--dbfile', default="db/or.db",
     type=str, help='path to database file')
-
-class AuthorCategories(object):
-  AUTHOR = "Author"
-  AC = "AreaChair"
-  REVIEWER = "Reviewer"
-  ANON = "Anonymous"
-  NAMED = "Named"
-
-def shorten_author(author):
-  # TODO: do this way earlier
-  assert "|" not in author # Only one signature per comment, I hope
-  if "Author" in author:
-    return AuthorCategories.AUTHOR
-  elif "Area_Chair" in author:
-    return AuthorCategories.AC
-  elif "AnonReviewer" in author:
-    return AuthorCategories.REVIEWER
-  elif author == "(anonymous)":
-    return AuthorCategories.ANON
-  else:
-    assert author.startswith("~")
-    return AuthorCategories.NAMED
-
 def count_comment_types(rows):
   forums = collections.defaultdict(dict)
   authors = {}
