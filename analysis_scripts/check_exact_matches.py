@@ -3,12 +3,12 @@ import json
 import math
 import sys
 
-import openreview_db as ordb
+import lib.openreview_db as ordb
 
 
 parser = argparse.ArgumentParser(
     description='Example for accessing OpenReview data')
-parser.add_argument('-d', '--dbfile', default="db/or.db",
+parser.add_argument('-d', '--dbfile', default="../db/or.db",
     type=str, help='path to database file')
 parser.add_argument('-p', '--pathsfile', default="characterized_paths.json",
     type=str, help='path to characteristic paths file')
